@@ -95,16 +95,50 @@ e1000_init(uint32 *xregs)
 int
 e1000_transmit(struct mbuf *m)
 {
-  //
-  // Your code here.
-  //
-  // the mbuf contains an ethernet frame; program it into
-  // the TX descriptor ring so that the e1000 sends it. Stash
-  // a pointer so that it can be freed after sending.
-  //
-  
-  return 0;
+    //
+    // Your code here.
+    //
+    // the mbuf contains an ethernet frame; program it into
+    // the TX descriptor ring so that the e1000 sends it. Stash
+    // a pointer so that it can be freed after sending.
+    //
+    //printf("in transmit\n");
+    // Logging entry point of the transmit function.
+    acquire(&e1000_lock); // Lock to ensure exclusive access to the transmit resources.
+
+    // Retrieve the current position in the transmit descriptor ring.
+    int pos = regs[E1000_TDT];
+
+    // Check if the transmit descriptor is ready for reuse.
+    // If not, the previous packet hasn't finished sending; return an error.
+    if ((tx_ring[pos].status & E1000_TXD_STAT_DD) == 0) {
+        release(&e1000_lock); // Release the lock before returning.
+        return -1;
+    }
+
+    // Free the previously transmitted buffer, if it exists, to avoid memory leaks.
+    struct mbuf *b = tx_mbufs[pos];
+    if (b)
+        mbuffree(b); // Free the memory buffer.
+
+    // Assign the new packet's buffer address and length to the descriptor.
+    tx_ring[pos].addr = (uint64) m->head;
+    tx_ring[pos].length = (uint64) m->len;
+
+    // Set command flags indicating end of packet and report status.
+    tx_ring[pos].cmd |= E1000_TXD_CMD_EOP; // End of packet.
+    tx_ring[pos].cmd |= E1000_TXD_CMD_RS; // Report status.
+
+    // Store the pointer to the new packet buffer for later retrieval and freeing.
+    tx_mbufs[pos] = m;
+
+    // Update the transmit descriptor tail to the next position, wrapping around the ring buffer.
+    regs[E1000_TDT] = (pos + 1) % TX_RING_SIZE;
+
+    release(&e1000_lock); // Unlock after the transmit descriptor is updated.
+    return 0; // Return success.
 }
+
 
 static void
 e1000_recv(void)
@@ -115,6 +149,7 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
+  
 }
 
 void
