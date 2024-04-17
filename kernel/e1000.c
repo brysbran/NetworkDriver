@@ -102,7 +102,6 @@ e1000_transmit(struct mbuf *m)
     // the TX descriptor ring so that the e1000 sends it. Stash
     // a pointer so that it can be freed after sending.
     //
-    //printf("in transmit\n");
     // Logging entry point of the transmit function.
     acquire(&e1000_lock); // Lock to ensure exclusive access to the transmit resources.
 
