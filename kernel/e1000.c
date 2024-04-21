@@ -148,7 +148,49 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
-  
+// Acquire the lock on the e1000 network interface to ensure exclusive access
+  acquire(&e1000_lock);
+
+  // Calculate the current position in the receive descriptor ring
+  int cur = (regs[E1000_RDT]+1) % RX_RING_SIZE;
+
+  // Continuously check if a new packet has been received
+  while ((rx_ring[cur].status & E1000_RXD_STAT_DD) != 0) {
+      // If E1000_RXD_STAT_DD bit is set, a new packet is available at the current index
+
+      // Retrieve the length of the received packet from the descriptor
+      int len = rx_ring[cur].length;
+
+      // Update the associated memory buffer's (mbuf) length to match the received packet's length
+      mbufput(rx_mbufs[cur], len);
+
+      // Release the lock before passing the packet up the network stack to avoid holding the lock during potentially long operations
+      release(&e1000_lock);
+
+      // Deliver the packet to the network protocol layer
+      net_rx(rx_mbufs[cur]);
+
+      // Reacquire the lock to manipulate hardware registers and memory structures again
+      acquire(&e1000_lock);
+
+      // Allocate a new mbuf for the descriptor since the previous mbuf is now with the network stack
+      rx_mbufs[cur] = mbufalloc(0);
+
+      // Update the descriptor with the new mbuf's head pointer
+      rx_ring[cur].addr = (uint64) rx_mbufs[cur]->head;
+
+      // Clear the descriptor’s status bits to indicate it's ready for new data
+      rx_ring[cur].status = 0;
+
+      // Update the E1000_RDT register to the current position, effectively moving to the next descriptor
+      regs[E1000_RDT] = cur;
+
+      // Calculate the next position in the receive ring
+      cur = (regs[E1000_RDT]+1) % RX_RING_SIZE;
+  }
+  // Release the lock after finishing processing all available packets
+  release(&e1000_lock);
+
 }
 
 void
